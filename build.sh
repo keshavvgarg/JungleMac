@@ -2,6 +2,7 @@
 # Builds Jungle.app with the Swift compiler from the Command Line Tools (no Xcode needed).
 #   ./build.sh          release build into build/Jungle.app
 #   ./build.sh debug    unoptimized build, faster to compile
+#   ./build.sh share    release build, zipped into build/Jungle.zip to send to friends
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -23,7 +24,9 @@ EOF
 fi
 
 if [[ $CONFIG == debug ]]; then FLAGS+=(-Onone -g); else FLAGS+=(-O); fi
+[[ $CONFIG == share ]] && CONFIG=release SHARE=1
 
+# Apple Silicon only.
 swiftc "${FLAGS[@]}" -swift-version 5 -target arm64-apple-macos14.0 \
   -parse-as-library -module-name Jungle \
   Sources/**/*.swift -o "$APP/Contents/MacOS/Jungle"
@@ -60,5 +63,11 @@ if [[ ! -f "$APP/Contents/Resources/AppIcon.icns" ]]; then
   iconutil -c icns $ICONSET -o "$APP/Contents/Resources/AppIcon.icns"
 fi
 
-codesign --force --sign - "$APP" >/dev/null 2>&1 || true
+codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
 echo "Built $APP"
+
+if [[ ${SHARE:-} == 1 ]]; then
+  rm -f build/Jungle.zip
+  ditto -c -k --sequesterRsrc --keepParent "$APP" build/Jungle.zip
+  echo "Zipped build/Jungle.zip"
+fi
