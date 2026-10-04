@@ -110,7 +110,6 @@ struct ContentView: View {
       pushScene()
       installKeys()
       if UserDefaults.standard.bool(forKey: "autostart") { start() }
-      if let path = UserDefaults.standard.string(forKey: "capture") { captureWindow(to: path) }
     }
     .onDisappear { keyMonitor.map(NSEvent.removeMonitor) }
     .onReceive(dayTimer) { now = $0 }
@@ -538,17 +537,5 @@ extension View {
         shape.fill(.ultraThinMaterial)
           .shadow(color: Color(red: 38 / 255, green: 52 / 255, blue: 44 / 255).opacity(0.12), radius: 20, y: 10))
       .overlay(shape.strokeBorder(Color.white.opacity(0.55)))
-  }
-}
-
-/// Debug aid: `-capture out.png` saves this app's own window a few seconds after launch.
-@MainActor private func captureWindow(to path: String) {
-  DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
-    guard let window = NSApp.windows.first(where: { $0.isVisible }),
-      let image = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(window.windowNumber), [.boundsIgnoreFraming, .bestResolution]),
-      let rep = Optional(NSBitmapImageRep(cgImage: image)),
-      let data = rep.representation(using: .png, properties: [:])
-    else { return }
-    try? data.write(to: URL(fileURLWithPath: path))
   }
 }

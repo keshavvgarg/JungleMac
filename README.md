@@ -52,6 +52,5 @@ Pass them after `--args`, for example `open build/Jungle.app --args -speed 60`.
 | `-speed 60` | Grows at 60× speed. Preview time is saved like real focus time |
 | `-hour 18.5` | Fixes the time of day |
 | `-autostart YES` | Starts the timer on launch |
-| `-capture out.png` | Saves the window to a PNG four seconds after launch |
 
 Running the binary with `-snapshot out.png -focus 72000 -seed 12345` renders the scene to a PNG without opening a window. That is handy for checking artwork; particles and animations do not appear in it.

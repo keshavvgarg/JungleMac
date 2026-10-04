@@ -124,34 +124,45 @@ final class Ambience {
     ramp(nil)
   }
 
+  private var channels: [AVAudioMixerNode] { [master, wind, rain, birds, thunder] }
+  /// The fade in progress: where each channel started and is heading.
+  private var fade: (starts: [Float], targets: [Float], step: Int, done: (() -> Void)?)?
+  private let fadeSteps = 12
+
   /// Fades each channel to its target over 0.6s, then runs `done`.
   private func ramp(_ done: (() -> Void)?) {
     rampTimer?.invalidate()
     let on = !mix.muted
-    let targets: [(AVAudioMixerNode, Float)] = [
-      (master, on ? Float(mix.master) : 0),
-      (wind, Float(levels.wind * mix.wind * 0.28)),
-      (rain, Float(levels.rain * mix.rain * 0.22)),
-      (birds, Float(levels.birds * mix.birds)),
-      (thunder, Float(levels.thunder * mix.thunder)),
+    let targets: [Float] = [
+      on ? Float(mix.master) : 0,
+      Float(levels.wind * mix.wind * 0.28),
+      Float(levels.rain * mix.rain * 0.22),
+      Float(levels.birds * mix.birds),
+      Float(levels.thunder * mix.thunder),
     ]
-    let starts = targets.map { $0.0.outputVolume }
-    var step = 0
-    let steps = 12
+    fade = (channels.map(\.outputVolume), targets, 0, done)
     let t = Timer(timeInterval: 0.05, repeats: true) { [weak self] timer in
-      MainActor.assumeIsolated {
-        step += 1
-        let k = Float(step) / Float(steps)
-        for (i, (node, target)) in targets.enumerated() { node.outputVolume = starts[i] + (target - starts[i]) * k }
-        if step >= steps {
-          timer.invalidate()
-          self?.rampTimer = nil
-          done?()
-        }
-      }
+      MainActor.assumeIsolated { self?.fadeStep(timer) }
     }
     RunLoop.main.add(t, forMode: .common)
     rampTimer = t
+  }
+
+  private func fadeStep(_ timer: Timer) {
+    guard var f = fade else {
+      timer.invalidate()
+      return
+    }
+    f.step += 1
+    let k = Float(f.step) / Float(fadeSteps)
+    for (i, node) in channels.enumerated() { node.outputVolume = f.starts[i] + (f.targets[i] - f.starts[i]) * k }
+    fade = f
+    if f.step >= fadeSteps {
+      timer.invalidate()
+      rampTimer = nil
+      fade = nil
+      f.done?()
+    }
   }
 
   private func tick() {
