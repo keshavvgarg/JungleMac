@@ -70,14 +70,16 @@ final class WeatherLayers {
         e.emitterPosition = CGPoint(x: w / 2, y: h * 0.4)
         e.emitterSize = CGSize(width: w * 1.1, height: h * 0.6)
       } else {
-        e.emitterShape = .line
+        // A thin rectangle, not `.line`: on macOS a line emitter's particles
+        // stay on the line instead of travelling.
+        e.emitterShape = .rectangle
         // Rain slants left as it falls, so it starts a little further right.
         e.emitterPosition = CGPoint(x: w / 2 + (i == MONSOON ? w * 0.1 : 0), y: h + 30)
         e.emitterSize = CGSize(width: w * 1.2, height: 1)
       }
     }
     drizzle.frame = main.bounds
-    drizzle.emitterShape = .line
+    drizzle.emitterShape = .rectangle
     drizzle.emitterPosition = CGPoint(x: w / 2 + w * 0.1, y: h + 30)
     drizzle.emitterSize = CGSize(width: w * 1.2, height: 1)
     drizzle.emitterCells = [rainCell(perSecond: 50, lifetime: 0.95)]
