@@ -8,6 +8,7 @@ struct SceneInput {
   var day: DayState
   var weather: WeatherState
   var regions: RegionState
+  var events: WorldEvents
   var running: Bool
 }
 
@@ -84,6 +85,9 @@ final class JungleScene {
   private let puffs = CALayer()
   private let rays = CALayer()
   private let flyers = CALayer()
+  private let skyEvents = CALayer()
+  private let airEvents = CALayer()
+  private lazy var wildlife = Wildlife(bands: bands, sky: skyEvents, air: airEvents) { [unowned self] in self.density($0) }
   private let canopy = CALayer()
   private let frame = CALayer()
 
@@ -135,7 +139,7 @@ final class JungleScene {
     sky.frame = viewport.bounds
     sky.startPoint = CGPoint(x: 0.5, y: 0)
     sky.endPoint = CGPoint(x: 0.5, y: 1)
-    for l in [sky, stars, moon, sun, clouds, hillFar, hillMid, mistHills, hillNear, ground, rainbow, bands[0], mistFar, bands[1], mistMid, puffs, bands[2], rays, flyers, canopy, frame] {
+    for l in [sky, stars, moon, skyEvents, sun, clouds, hillFar, hillMid, mistHills, hillNear, ground, rainbow, bands[0], mistFar, bands[1], mistMid, puffs, bands[2], airEvents, rays, flyers, canopy, frame] {
       world.addSublayer(l)
     }
     for b in bands { b.frame = viewport.bounds }
@@ -195,6 +199,7 @@ final class JungleScene {
       if resolutionChanged {
         worldScale = s
         sprites.removeAll()
+        wildlife.reset()
         if let last { update(last) }
       }
     }
@@ -223,6 +228,7 @@ final class JungleScene {
       updateFlyers(input)
       updateRegions(input)
       updateSky(input)
+      wildlife.update(input)
     }
     // Slow fades, like the web version's CSS transitions.
     let w = input.season.weights
@@ -282,6 +288,7 @@ final class JungleScene {
     specs.removeAll()
     flyerIds.removeAll()
     flyers.sublayers?.forEach { $0.removeFromSuperlayer() }
+    wildlife.reset()
 
     hillFar.path = ridge(1, 470, 55, 0)
     hillMid.path = ridge(2, 525, 40, 7)

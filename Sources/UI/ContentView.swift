@@ -46,6 +46,8 @@ struct ContentView: View {
   @State private var soundOpen = false
   @State private var mix = loadMix()
   @State private var keyMonitor: Any?
+  @State private var lastEvents: WorldEvents?
+  @State private var sightings = loadSightings()
 
   private let dayTimer = Timer.publish(every: 20, tolerance: 2, on: .main, in: .common).autoconnect()
 
@@ -137,10 +139,12 @@ struct ContentView: View {
     let season = seasonAt(clock.focus)
     let day = dayAt(now, forcedHour: Preview.hour)
     let weather = weatherAt(now, season.weights, day)
+    let events = eventsAt(now, seed: clock.seed, focus: clock.focus, weights: season.weights, day: day)
     stage.scene.update(
       SceneInput(
         seed: clock.seed, focus: clock.focus, season: season, day: day, weather: weather,
-        regions: regionsAt(clock.focus), running: clock.running))
+        regions: regionsAt(clock.focus), events: events, running: clock.running))
+    noteEvents(events)
     stage.ambience.setLevels(
       AmbienceLevels(
         wind: min(1, 0.2 + weather.sway * 0.4),
@@ -182,9 +186,31 @@ struct ContentView: View {
     guard b > a else { return }
     var msgs: [String] = []
     for sp in BIRDS where sp.unlockAt > a && sp.unlockAt <= b { msgs.append("A \(sp.name) has found your jungle") }
+    for sp in ANIMALS where sp.unlockAt > a && sp.unlockAt <= b { msgs.append("\(article(sp.name)) \(sp.name) has found your jungle") }
     for r in REGION_MILESTONES where r.at > a && r.at <= b { msgs.append(r.text) }
     if Int(a / SEASON_SECONDS) != Int(b / SEASON_SECONDS) { msgs.append("\(seasonAt(b).name) has arrived") }
     if a < FIRST_FRUIT_AT && b >= FIRST_FRUIT_AT { msgs.append("Your first fruit has ripened") }
+    toast(msgs)
+  }
+
+  /// Toasts rare events as they begin, and remembers first sightings for the field guide.
+  private func noteEvents(_ e: WorldEvents) {
+    let was = lastEvents ?? WorldEvents()
+    lastEvents = e
+    var msgs: [String] = []
+    if e.aurora && !was.aurora { msgs.append("The aurora is dancing over the hills") }
+    if e.comet && !was.comet { msgs.append("A comet is crossing the sky tonight") }
+    if e.tiger && !was.tiger { msgs.append("A tiger is prowling through your jungle") }
+    for id in e.sightingIds where sightings[id] == nil {
+      sightings[id] = now.timeIntervalSince1970
+      if id == "shootingStar" { msgs.append("Your first shooting stars are falling") }
+    }
+    if msgs.isEmpty { return }
+    saveSightings(sightings)
+    toast(msgs)
+  }
+
+  private func toast(_ msgs: [String]) {
     guard !msgs.isEmpty else { return }
     let added = msgs.map { text -> Toast in
       toastId += 1
@@ -325,7 +351,8 @@ struct ContentView: View {
           GhostButton(title: "Close") { guideOpen = false }
         }
         ScrollView {
-          VStack(spacing: 6) {
+          VStack(alignment: .leading, spacing: 6) {
+            sectionTitle("Birds")
             ForEach(BIRDS, id: \.id) { b in
               let seen = b.unlockAt <= focus
               HStack(spacing: 12) {
@@ -338,6 +365,23 @@ struct ContentView: View {
               }
               .padding(8)
               .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(seen ? 0.5 : 0)))
+            }
+            sectionTitle("Animals")
+            ForEach(ANIMALS, id: \.id) { a in
+              let seen = a.unlockAt <= focus
+              guideRow(seen: seen, title: seen ? a.name : "Unknown animal", detail: seen ? a.note : "Arrives after \(fmtDuration(a.unlockAt)) of total focus") {
+                AnimalThumb(id: a.id, seen: seen)
+              }
+            }
+            sectionTitle("Sightings")
+            ForEach(SIGHTINGS, id: \.id) { s in
+              let first = sightings[s.id]
+              guideRow(
+                seen: first != nil, title: first != nil ? s.name : "Not yet seen",
+                detail: first.map { "\(s.note) First seen \(Date(timeIntervalSince1970: $0).formatted(date: .abbreviated, time: .omitted))." } ?? s.hint
+              ) {
+                Image(systemName: s.symbol).font(.system(size: 20)).opacity(first != nil ? 0.8 : 0.25)
+              }
             }
           }
         }
@@ -352,6 +396,39 @@ struct ContentView: View {
     .transition(.opacity)
     .onExitCommand { guideOpen = false }
   }
+
+  private func sectionTitle(_ text: String) -> some View {
+    Text(text.uppercased()).font(.system(size: 10.5)).tracking(1).opacity(0.6).padding(.top, 8).padding(.leading, 8)
+  }
+
+  private func guideRow<Thumb: View>(seen: Bool, title: String, detail: String, @ViewBuilder thumb: () -> Thumb) -> some View {
+    HStack(spacing: 12) {
+      thumb().frame(width: 76, height: 38)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title).font(.system(size: 14, weight: .semibold)).opacity(seen ? 1 : 0.55)
+        Text(detail).font(.system(size: 12.5)).opacity(0.72)
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(8)
+    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(seen ? 0.5 : 0)))
+  }
+}
+
+/// "An Indian Hare", "A Bengal Tiger".
+private func article(_ name: String) -> String {
+  "AEIOU".contains(name.prefix(1)) ? "An" : "A"
+}
+
+private let SIGHTINGS_KEY = "jungle.sightings"
+
+/// First-seen times of rare sightings, by id.
+private func loadSightings() -> [String: Double] {
+  UserDefaults.standard.dictionary(forKey: SIGHTINGS_KEY) as? [String: Double] ?? [:]
+}
+
+private func saveSightings(_ s: [String: Double]) {
+  UserDefaults.standard.set(s, forKey: SIGHTINGS_KEY)
 }
 
 /// Plant specs for the fruiting count, cached per seed so each tick only checks state.
@@ -361,6 +438,41 @@ struct ContentView: View {
   if plantCache.seed != seed { plantCache = (seed, []) }
   while plantCache.plants.count < count { plantCache.plants.append(makePlant(seed, plantCache.plants.count)) }
   return plantCache.plants.prefix(count).filter { isFruiting($0, focus, weights) }.count
+}
+
+private struct AnimalThumb: View {
+  let id: String
+  let seen: Bool
+
+  var body: some View {
+    let art: AnimalArt =
+      switch id {
+      case "rabbit": hareArt()
+      case "peacock": peacockArt()
+      case "deer": deerArt(stag: true)
+      case "elephant": elephantArt()
+      default: tigerArt()
+      }
+    let ops = art.legs.flatMap(\.ops) + art.body + art.front.flatMap(\.ops)
+    if let sprite = render(seen ? ops : silhouette(ops, "#3a4a4155"), pixelsPerUnit: 3, upright: true) {
+      Image(decorative: sprite.image, scale: 3).resizable().scaledToFit()
+    }
+  }
+}
+
+/// Every shape in one flat color, for undiscovered entries.
+private func silhouette(_ ops: [Op], _ color: String) -> [Op] {
+  ops.map { op in
+    switch op {
+    case let .shape(path, fill, stroke, _, t):
+      var s = stroke
+      s?.color = color
+      s?.alpha = 1
+      return .shape(path, fill: fill == nil ? nil : .solid(color), stroke: s, opacity: 1, transform: t)
+    case let .group(children, _, t):
+      return .group(silhouette(children, color), opacity: 1, transform: t)
+    }
+  }
 }
 
 private struct BirdThumb: View {

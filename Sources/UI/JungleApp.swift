@@ -63,7 +63,8 @@ private func snapshot(to path: String) {
   scene.update(
     SceneInput(
       seed: seed, focus: focus, season: season, day: day, weather: weatherAt(now, season.weights, day),
-      regions: regionsAt(focus), running: true))
+      regions: regionsAt(focus), events: eventsAt(now, seed: seed, focus: focus, weights: season.weights, day: day),
+      running: true))
   guard
     let ctx = CGContext(
       data: nil, width: Int(width), height: Int(height), bitsPerComponent: 8, bytesPerRow: 0,

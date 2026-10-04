@@ -16,6 +16,12 @@ Drag `build/Jungle.app` into `/Applications` to keep it. Space starts and stops,
 
 `build.sh` calls `swiftc` directly because SwiftPM is broken in some Command Line Tools releases. It also works around a duplicate `SwiftBridging` module map in those releases. The app icon is drawn by the app itself on the first build.
 
+## Wildlife and rare events
+
+Ground animals arrive with total focus, like the birds: an Indian hare (30 minutes), a peacock that fans its train (2 hours), a pair of spotted deer (4 hours), an elephant and calf walking the far hills (8 hours) and a Bengal tiger (15 hours) that only prowls through in some hours.
+
+Rare events follow the real clock and the jungle's seed: shooting stars on clear nights, an aurora on about one winter night in three, a comet on about one clear night in twelve, migrating flocks on autumn days and butterflies in spring and summer. The field guide lists animals and first sightings.
+
 ## Why it is light
 
 - Each plant is drawn once into an image and redrawn only when it visibly changes (fruit, blossom, season colors). Growth just scales the layer.

@@ -127,6 +127,7 @@ extension CAGradientLayer {
 func transaction(_ duration: Double? = nil, _ body: () -> Void) {
   CATransaction.begin()
   if let duration {
+    CATransaction.setDisableActions(false)
     CATransaction.setAnimationDuration(duration)
     CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .linear))
   } else {
