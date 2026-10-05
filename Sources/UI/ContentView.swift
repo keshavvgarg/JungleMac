@@ -435,7 +435,9 @@ private func saveSightings(_ s: [String: Double]) {
 
 @MainActor private func fruitingCount(seed: Int, count: Int, focus: Double, weights: [Double]) -> Int {
   if plantCache.seed != seed { plantCache = (seed, []) }
-  while plantCache.plants.count < count { plantCache.plants.append(makePlant(seed, plantCache.plants.count)) }
+  while plantCache.plants.count < count {
+    plantCache.plants.append(makePlant(seed, plantCache.plants.count, after: plantCache.plants))
+  }
   return plantCache.plants.prefix(count).filter { isFruiting($0, focus, weights) }.count
 }
 

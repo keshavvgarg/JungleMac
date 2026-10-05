@@ -1,6 +1,6 @@
 # Jungle for macOS
 
-A native macOS version of [Jungle](https://github.com/keshavvgarg/Jungle), the focus timer whose jungle grows only while the timer runs. It grows the same jungle from the same seed as the web version, and uses a small fraction of the CPU.
+A native macOS version of [Jungle](https://github.com/keshavvgarg/Jungle), the focus timer whose jungle grows only while the timer runs. It shares the web version's seasons, growth and save format, spaces its trees apart so a grown jungle stays open, and uses a small fraction of the CPU.
 
 ## Build and run
 
@@ -35,7 +35,7 @@ With the same 20-hour jungle and the timer running in a 1280×760 window on an M
 
 | Path | Purpose |
 | --- | --- |
-| `Sources/Model` | Line-for-line ports of `world.ts`, `seasons.ts`, `atmosphere.ts`, `birds.ts` and the focus clock |
+| `Sources/Model` | Ports of `world.ts`, `seasons.ts`, `atmosphere.ts`, `birds.ts` and the focus clock |
 | `Sources/Art` | SVG path parser, renderer, and the plant and bird drawings from `Plant.tsx` and `Bird.tsx` |
 | `Sources/Scene` | The Core Animation layer tree (`JungleScene`) and weather emitters |
 | `Sources/UI` | SwiftUI window, panel, field guide and sound mixer |

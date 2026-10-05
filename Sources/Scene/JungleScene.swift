@@ -35,15 +35,27 @@ private final class PlantNode {
   }
 }
 
+/// A perched bird that now and then flies off and comes back. `root` carries
+/// position and size, `facing` turns it to face its flight, and the sitting
+/// and flying poses swap as it takes off and lands.
 private final class BirdNode {
   let root = CALayer()
+  let facing = CALayer()
   let perch = CALayer()
   let image = CALayer()
+  let flying = CALayer()
   var imageKey = ""
+  /// The wing's beats through the flight loop, and when that loop began, so
+  /// a rebuilt wing layer picks up in step with the rest of the bird.
+  var wingFlight: CAAnimation?
+  var flightBegin: CFTimeInterval = 0
 
   init() {
-    root.addSublayer(perch)
+    root.addSublayer(facing)
+    facing.addSublayer(perch)
     perch.addSublayer(image)
+    flying.opacity = 0
+    facing.addSublayer(flying)
   }
 }
 
@@ -523,7 +535,7 @@ final class JungleScene {
 
   private func updatePlants(_ input: SceneInput) {
     let count = plantCount(input.focus)
-    while specs.count < count { specs.append(makePlant(seed, specs.count)) }
+    while specs.count < count { specs.append(makePlant(seed, specs.count, after: specs)) }
     if specs.count > count { specs.removeLast(specs.count - count) }
     for (id, n) in plants where id >= count {
       n.root.removeFromSuperlayer()
@@ -631,6 +643,7 @@ final class JungleScene {
 
   private func updateBirds(_ input: SceneInput) {
     let placed = placeBirds(seed, specs, input.focus)
+    let initial = birds.isEmpty
     var seen = Set<String>()
     for (i, b) in placed.enumerated() {
       seen.insert(b.key)
@@ -640,9 +653,12 @@ final class JungleScene {
       } else {
         node = BirdNode()
         node.root.position = CGPoint(x: b.x, y: b.y)
-        node.root.transform = CATransform3DMakeScale(b.scale * b.flip, b.scale, 1)
-        node.perch.loop(hop(duration: 7), key: "hop", delay: Double(-i) * 1.7)
+        node.root.transform = CATransform3DMakeScale(b.scale, b.scale, 1)
+        // In the tree first, so its animations share the scene's clock.
         bands[bandOf(b.depth)].insert(node.root, sortY: b.sortY)
+        node.perch.loop(hop(duration: 7), key: "hop", delay: Double(-i) * 1.7)
+        // A bird that turns up while you watch flies in and lands.
+        addFlights(node, b, arriving: !initial && input.focus - b.arriveAt < 10)
         birds[b.key] = node
       }
       node.root.opacity = Float(min(1, (input.focus - b.arriveAt) / 4))
@@ -650,6 +666,12 @@ final class JungleScene {
       let key = "bird|\(b.sp.id)|\(px)"
       if node.imageKey != key {
         node.image.setSprite(sprite(key) { render(birdParts(b.sp).all, pixelsPerUnit: px) })
+        let parts = birdParts(b.sp, flying: true)
+        node.flying.sublayers?.forEach { $0.removeFromSuperlayer() }
+        _ = node.flying.addSprite(sprite(key + "|below") { render(parts.below, pixelsPerUnit: px) })
+        let wing = node.flying.addSprite(sprite(key + "|wing") { render(parts.wing, pixelsPerUnit: px) }, pivot: CGPoint(x: 0, y: -12))
+        if let flight = node.wingFlight { wing.loop(flight, key: "flap", at: node.flightBegin) }
+        _ = node.flying.addSprite(sprite(key + "|above") { render(parts.above, pixelsPerUnit: px) })
         node.imageKey = key
       }
     }
@@ -657,6 +679,201 @@ final class JungleScene {
       n.root.removeFromSuperlayer()
       birds[key] = nil
     }
+  }
+
+  /// Loops a bird through sitting, taking off towards the nearer edge, a
+  /// while out of sight, and swooping back to land on its perch.
+  ///
+  /// Everything is laid out in time, not along the curve, so the rhythm stays
+  /// even. The bird jumps off the branch fast and settles into a cruise, then
+  /// brakes and flares nose-up to land. In between it flies the way small birds
+  /// do, in bounds: a couple of wingbeats lift it, then it folds its wings and
+  /// dips until the next burst. Height, wings and pitch share one timeline, so
+  /// they stay in step. Each leg's duration comes from its length, so near and
+  /// far birds fly at a natural pace.
+  private func addFlights(_ node: BirdNode, _ b: BirdPlacement, arriving: Bool) {
+    let r = Rng(seed, b.key.unicodeScalars.reduce(17) { $0 &* 31 &+ Int($1.value) }, 41)
+    let sit = 45 + r() * 90
+    let away = 6 + r() * 14
+    let dir: Double = b.x < W / 2 ? -1 : 1
+    let edge = dir < 0 ? -140.0 : W + 140
+    let perch = CGPoint(x: b.x, y: b.y)
+    let span = abs(edge - b.x)
+
+    // Out: rise steeply off the branch, then head for the edge.
+    let leave = FlightRoute([
+      perch,
+      CGPoint(x: b.x + dir * 30, y: b.y - 110 - r() * 40),
+      CGPoint(x: b.x + dir * span * 0.55, y: b.y - 200 - r() * 100),
+      CGPoint(x: edge, y: b.y - 120 - r() * 180),
+    ])
+    // Back: a different, higher route, dropping onto the branch from above.
+    let entry = CGPoint(x: edge, y: b.y - 220 - r() * 140)
+    let come = FlightRoute([
+      entry,
+      CGPoint(x: b.x + dir * span * 0.45, y: entry.y - 60 - r() * 60),
+      CGPoint(x: b.x + dir * 60, y: b.y - 140 - r() * 40),
+      perch,
+    ])
+    // World units a second. Distant birds are drawn smaller, so they also
+    // cover less of the screen, as perspective would have it.
+    let speed = min(120, max(30, (80 + r() * 30) * b.scale))
+    // One bound is a burst of beats then a glide with folded wings.
+    let cycle = 0.6 + r() * 0.2
+    let flapShare = 0.5 + r() * 0.1
+    let lift = (5 + r() * 3) * b.scale
+    // A wingbeat while flapping steadily.
+    let beat = 0.16 + r() * 0.04
+    let folded = 0.2
+
+    let launch = SpeedProfile(boost: 1.7, boostSpan: 0.2, brakeSpan: 0)
+    let landing = SpeedProfile(boost: 1, boostSpan: 0, brakeSpan: 0.3)
+    let out = min(30, max(4, leave.length / (speed * launch.mean)))
+    let back = min(30, max(5, come.length / (speed * landing.mean)))
+    let period = sit + out + away + back
+
+    var points: [CGPoint] = [perch]
+    var times: [Double] = [0]
+    var tilts: [Double] = [0]
+    var faces: [Double] = [dir]
+    var wing: [Double] = [1]
+    var wingTimes: [Double] = [0]
+
+    /// Samples one leg starting `start` seconds into the loop.
+    func fly(_ route: FlightRoute, _ profile: SpeedProfile, start: Double, duration: Double, lands: Bool) {
+      // No glides while climbing off the branch or coming in to land: the
+      // bird flaps the whole way there.
+      let calmStart = lands ? 0 : 0.8
+      let calmEnd = lands ? 1.6 : 0
+      func bounding(_ k: Int) -> Bool {
+        let c0 = Double(k) * cycle
+        return c0 >= calmStart && c0 + cycle <= duration - calmEnd
+      }
+      func height(_ t: Double) -> Double {
+        let k = Int(t / cycle)
+        return bounding(k) ? lift * bound((t - Double(k) * cycle) / cycle, flapShare) : 0
+      }
+
+      let n = max(8, Int(duration * 20))
+      for i in 0...n {
+        let u = Double(i) / Double(n)
+        let t = u * duration
+        let (pt, tangent) = route.at(profile.distance(u))
+        points.append(CGPoint(x: pt.x, y: pt.y - height(t)))
+        times.append((start + t) / period)
+        // Nose up when climbing, down when diving, from the route alone so
+        // the bounds don't rock the body.
+        var pitch = max(-0.4, min(0.4, atan2(tangent.y, abs(tangent.x) + 1e-6) * 0.7))
+        if lands {
+          let f = smoothstep((t - duration + 0.5) / 0.4)
+          pitch += (-0.55 - pitch) * f
+        }
+        tilts.append(pitch)
+        faces.append(abs(tangent.x) > 1e-3 ? (tangent.x > 0 ? 1 : -1) : faces.last!)
+      }
+
+      // Wings, clipped to the leg; every bound starts and ends with them up.
+      let end = start + duration
+      func key(_ t: Double, _ v: Double) {
+        guard t < end else { return }
+        wing.append(v)
+        wingTimes.append(t / period)
+      }
+      key(start, 1)
+      var k = 0
+      while Double(k) * cycle < duration {
+        let c0 = start + Double(k) * cycle
+        if bounding(k) {
+          let flapping = cycle * flapShare
+          for j in 0..<2 {
+            key(c0 + flapping * (Double(j) + 0.5) / 2, -0.7)
+            key(c0 + flapping * Double(j + 1) / 2, 1)
+          }
+          key(c0 + flapping + 0.06, folded)
+          key(c0 + cycle - 0.06, folded)
+          key(c0 + cycle, 1)
+        } else {
+          // Quicker beats in the last moments before touchdown.
+          let braking = lands && start + Double(k + 1) * cycle > end - 0.6
+          let beats = max(1, Int((cycle / (braking ? beat * 0.7 : beat)).rounded()))
+          for j in 0..<beats {
+            key(c0 + cycle * (Double(j) + 0.5) / Double(beats), -0.7)
+            key(c0 + cycle * Double(j + 1) / Double(beats), 1)
+          }
+        }
+        k += 1
+      }
+      wing.append(1)
+      wingTimes.append(end / period)
+    }
+    fly(leave, launch, start: sit, duration: out, lands: false)
+    fly(come, landing, start: sit + out + away, duration: back, lands: true)
+    // Both end on the landing; pin it to exactly 1 against rounding.
+    times[times.count - 1] = 1
+    wingTimes[wingTimes.count - 1] = 1
+
+    // It sits facing the way it landed.
+    let landed = faces.last ?? b.flip
+    faces[0] = landed
+    node.facing.transform = CATransform3DMakeScale(landed, 1, 1)
+
+    let path = CAKeyframeAnimation(keyPath: "position")
+    path.values = points.map { NSValue(point: $0) }
+    path.keyTimes = times.map { NSNumber(value: $0) }
+    path.duration = period
+
+    // Discrete facing changes, only where the direction flips.
+    var faceValues: [Double] = [landed]
+    var faceTimes: [Double] = [0]
+    for (k, f) in faces.enumerated() where k > 0 && f != faceValues.last! {
+      faceValues.append(f)
+      faceTimes.append(times[k])
+    }
+    let face = CAKeyframeAnimation(keyPath: "transform.scale.x")
+    face.values = faceValues
+    face.keyTimes = (faceTimes + [1]).map { NSNumber(value: $0) }
+    face.calculationMode = .discrete
+    face.duration = period
+
+    let tilt = CAKeyframeAnimation(keyPath: "transform.rotation.z")
+    tilt.values = tilts
+    tilt.keyTimes = times.map { NSNumber(value: $0) }
+    tilt.duration = period
+
+    let flap = CAKeyframeAnimation(keyPath: "transform.scale.y")
+    flap.values = wing
+    flap.keyTimes = wingTimes.map { NSNumber(value: $0) }
+    flap.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: wing.count - 1)
+    flap.duration = period
+
+    // A crouch before the jump, and a little give in the legs on landing.
+    let tSit = sit / period
+    let crouch = CAKeyframeAnimation(keyPath: "transform.scale.y")
+    crouch.values = [0.86, 1.04, 1, 1, 0.8, 1.1, 0.86]
+    crouch.keyTimes = [0, 0.12 / period, 0.3 / period, tSit - 0.35 / period, tSit - 0.06 / period, tSit, 1]
+      .map { NSNumber(value: $0) }
+    crouch.duration = period
+
+    func pose(_ sitting: Double) -> CAKeyframeAnimation {
+      let a = CAKeyframeAnimation(keyPath: "opacity")
+      a.values = [sitting, 1 - sitting]
+      a.keyTimes = [0, NSNumber(value: tSit), 1]
+      a.calculationMode = .discrete
+      a.duration = period
+      return a
+    }
+
+    // Arrivals start just before their landing; everyone else at a random point.
+    let begin = node.root.localNow + (arriving ? -(period - back) : -r() * period)
+    node.root.loop(path, key: "flight", at: begin)
+    node.facing.loop(face, key: "flight", at: begin)
+    node.perch.loop(pose(1), key: "pose", at: begin)
+    node.image.loop(crouch, key: "crouch", at: begin)
+    node.flying.loop(pose(0), key: "pose", at: begin)
+    node.flying.loop(tilt, key: "tilt", at: begin)
+    // The wing layer is rebuilt when the bird's sprites are, so it picks this up then.
+    node.wingFlight = flap
+    node.flightBegin = begin
   }
 
   private func updateFlyers(_ input: SceneInput) {
@@ -877,4 +1094,101 @@ extension JungleScene {
       pondArt.setSprite(render(ops, pixelsPerUnit: density(1)))
     }
   }
+}
+
+/// A cubic Bézier flight path that can be walked by distance travelled
+/// rather than by its curve parameter, which bunches up on the bends.
+private struct FlightRoute {
+  let p: [CGPoint]
+  /// Distance covered at each of `steps` evenly spaced curve parameters.
+  private var lengths: [Double] = [0]
+  private let steps = 96
+
+  init(_ p: [CGPoint]) {
+    self.p = p
+    var prev = point(0)
+    for k in 1...steps {
+      let pt = point(Double(k) / Double(steps))
+      lengths.append(lengths[k - 1] + hypot(pt.x - prev.x, pt.y - prev.y))
+      prev = pt
+    }
+  }
+
+  var length: Double { lengths[steps] }
+
+  private func point(_ t: Double) -> CGPoint {
+    let u = 1 - t
+    let w0 = u * u * u, w1 = 3 * u * u * t, w2 = 3 * u * t * t, w3 = t * t * t
+    return CGPoint(x: w0 * p[0].x + w1 * p[1].x + w2 * p[2].x + w3 * p[3].x, y: w0 * p[0].y + w1 * p[1].y + w2 * p[2].y + w3 * p[3].y)
+  }
+
+  private func tangent(_ t: Double) -> CGPoint {
+    let u = 1 - t
+    let w0 = 3 * u * u, w1 = 6 * u * t, w2 = 3 * t * t
+    return CGPoint(
+      x: w0 * (p[1].x - p[0].x) + w1 * (p[2].x - p[1].x) + w2 * (p[3].x - p[2].x),
+      y: w0 * (p[1].y - p[0].y) + w1 * (p[2].y - p[1].y) + w2 * (p[3].y - p[2].y))
+  }
+
+  /// The point `fraction` of the way along by distance, and the direction of travel there.
+  func at(_ fraction: Double) -> (CGPoint, CGPoint) {
+    let target = max(0, min(1, fraction)) * length
+    var lo = 0, hi = steps
+    while hi - lo > 1 {
+      let mid = (lo + hi) / 2
+      if lengths[mid] < target { lo = mid } else { hi = mid }
+    }
+    let seg = lengths[hi] - lengths[lo]
+    let t = (Double(lo) + (seg > 0 ? (target - lengths[lo]) / seg : 0)) / Double(steps)
+    return (point(t), tangent(t))
+  }
+}
+
+/// How fast a bird covers a leg over time, relative to its cruise: starting at
+/// `boost` times cruise and easing back over the first `boostSpan` of the leg,
+/// and slowing to a stop over the last `brakeSpan`.
+private struct SpeedProfile {
+  let boost, boostSpan, brakeSpan: Double
+
+  /// Distance at time `u`, both as fractions of the leg, before normalising.
+  private func raw(_ u: Double) -> Double {
+    let a = min(u, boostSpan)
+    var d = a + (boostSpan > 0 ? (boost - 1) * (a - a * a / (2 * boostSpan)) : 0)
+    let cruiseEnd = 1 - brakeSpan
+    d += max(0, min(u, cruiseEnd) - boostSpan)
+    if u > cruiseEnd && brakeSpan > 0 {
+      let s = u - cruiseEnd
+      d += s - s * s / (2 * brakeSpan)
+    }
+    return d
+  }
+
+  /// Average speed over the leg as a multiple of cruise.
+  var mean: Double { raw(1) }
+
+  /// Fraction of the route covered at fraction `u` of the leg's time.
+  func distance(_ u: Double) -> Double { raw(u) / mean }
+}
+
+/// Height through one bound, from 0 at its start and end to about 1 where the
+/// wings fold at `flapShare` of the way through. The beats pull it out of the
+/// previous dip and up; with wings folded it coasts up a touch more and falls
+/// like a thrown stone.
+private func bound(_ phase: Double, _ flapShare: Double) -> Double {
+  let a = flapShare, glide = 1 - flapShare
+  let rising = 0.6 / a
+  let g = 2 * (1 + rising * glide) / (glide * glide)
+  if phase >= a {
+    let w = phase - a
+    return 1 + rising * w - g * w * w / 2
+  }
+  // Hermite from the fall it was in to the climb at the fold.
+  let x = phase / a
+  let falling = rising - g * glide
+  return a * falling * (x * x * x - 2 * x * x + x) + (3 * x * x - 2 * x * x * x) + a * rising * (x * x * x - x * x)
+}
+
+private func smoothstep(_ x: Double) -> Double {
+  let t = max(0, min(1, x))
+  return t * t * (3 - 2 * t)
 }

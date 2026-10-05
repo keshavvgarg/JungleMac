@@ -43,30 +43,10 @@ private let TALL_CANOPY: [(Double, Double, Double, Double, Int)] = [
 ]
 private let TALL_FRUIT: [(Double, Double)] = [(-62, -296), (-28, -288), (18, -290), (60, -297), (0, -283), (-44, -306), (40, -306)]
 private let TALL_VINES: [(Double, Double)] = [(-70, -300), (30, -290), (75, -305)]
-private let CHERRY_BRANCHES = [
-  "M-8 -108 Q-35 -130 -62 -168", "M-2 -140 Q6 -180 8 -214", "M4 -122 Q35 -135 64 -163",
-  "M-30 -128 Q-55 -138 -80 -148", "M30 -130 Q55 -140 80 -146", "M-4 -170 Q-22 -195 -30 -214",
-]
-private let CHERRY_CANOPY: [(Double, Double, Double, Int)] = [
-  (-60, -175, 34, 0), (62, -170, 32, 0), (-78, -150, 20, 1), (80, -148, 18, 1),
-  (0, -200, 44, 1), (-30, -215, 34, 1), (35, -212, 34, 1), (20, -178, 30, 2), (-5, -240, 28, 2),
-]
-private let CHERRY_FRUIT: [(Double, Double)] = [(-50, -150), (-10, -166), (30, -160), (60, -145), (-25, -190), (15, -196), (-70, -140)]
-private let CHERRY_SPECKS: [(Double, Double)] = [
-  (-62, -190), (-38, -228), (-10, -258), (18, -225), (48, -198), (66, -180), (-20, -200), (8, -186), (-84, -158), (84, -156),
-  (40, -228), (-48, -165),
-]
-private let SAKURA = ["#e493ad", "#f2b3c7", "#fcd8e3"]
-
 /// The leaf gradient for a hue bucket and tone (0 dark, 1 mid, 2 light).
 func leafPaint(_ pal: Palette, _ bucket: Int, _ tone: Int) -> Paint {
   let base = shade([pal.leafDark, pal.leafMid, pal.leafLight][tone], LEAF_BUCKETS[bucket])
   return .radial(cx: 0.36, cy: 0.3, r: 0.8, stops: [(0, shade(base, 0.22), 1), (0.55, base, 1), (1, shade(base, -0.22), 1)])
-}
-
-private func sakuraPaint(_ tone: Int) -> Paint {
-  let c = SAKURA[tone]
-  return .radial(cx: 0.36, cy: 0.3, r: 0.8, stops: [(0, shade(c, 0.35), 1), (0.55, c, 1), (1, mix(c, "#9a4a68", 0.35), 1)])
 }
 
 /// Rounds the parts of a plant's state that change its drawing, so plants
@@ -82,7 +62,8 @@ func drawnState(_ s: PlantState) -> PlantState {
 func plantImageKey(_ p: PlantSpec, _ s: PlantState, _ pal: Palette) -> String {
   let kinds = FRUIT_COLORS[p.species]?.count ?? 1
   let fk = Int((p.fruitKind * Double(kinds)).rounded(.down))
-  return "\(p.species.rawValue)|\(p.form)|\(leafBucket(p.hue))|\(fk)|\(s.bloom)|\(s.fruitSize)|\(s.ripeness)|\(s.vine)|\(s.sakura)|\(s.foliage)|\(pal.key)"
+  let variant = p.species == .cherry ? p.id % CHERRY_VARIANTS : 0
+  return "\(p.species.rawValue)|\(p.form)|\(variant)|\(leafBucket(p.hue))|\(fk)|\(s.bloom)|\(s.fruitSize)|\(s.ripeness)|\(s.vine)|\(s.sakura)|\(s.foliage)|\(pal.key)"
 }
 
 /// The plant's swaying body in local coordinates, trunk base at (0, 0).
@@ -215,32 +196,7 @@ func plantOps(_ p: PlantSpec, _ s: PlantState, _ pal: Palette) -> [Op] {
     ops += fruits(TALL_FRUIT, 5)
 
   case .cherry:
-    let bark = shade(pal.trunk, -0.15)
-    ops.append(.fill("M-10 0 Q-2 -60 -12 -110 Q-15 -132 -4 -152 L4 -152 Q1 -122 10 -100 Q16 -50 10 0Z", .solid(bark)))
-    var inner: [Op] = CHERRY_BRANCHES.enumerated().map { (i, d) in
-      .stroke(d, Stroke(color: bark, width: i < 3 ? 5 : 3, cap: .round))
-    }
-    var foliage: [Op] = []
-    for (x, y, r, tone) in CHERRY_CANOPY {
-      foliage.append(.fill(circlePath(x, y, r), g[tone]))
-      if s.sakura > 0.01 { foliage.append(.fill(circlePath(x, y, r), sakuraPaint(tone), opacity: s.sakura)) }
-    }
-    if s.sakura > 0.01 {
-      foliage += CHERRY_SPECKS.map { .fill(circlePath($0.0, $0.1, 2.4), .solid("#fff6f8"), opacity: s.sakura * 0.9) }
-    }
-    if s.foliage > 0.01 { inner.append(.group(foliage, opacity: s.foliage)) }
-    if s.fruitSize > 0.01 {
-      for (x, y) in CHERRY_FRUIT {
-        inner.append(
-          .stroke(
-            "M\(f(x)) \(f(y - 9)) L\(f(x - 3)) \(f(y)) M\(f(x)) \(f(y - 9)) L\(f(x + 3)) \(f(y + 1))",
-            Stroke(color: "#5b4a2a", width: 0.8)))
-        inner.append(.fill(circlePath(x - 3, y, 3.2 * s.fruitSize), .solid(fruitFill)))
-        inner.append(.fill(circlePath(x + 3, y + 1, 3.2 * s.fruitSize), .solid(fruitFill)))
-      }
-    }
-    let form = p.form == 1 ? scale(1.18, 0.92) : p.form == 2 ? scale(0.84, 1.1) : .identity
-    ops.append(.group(inner, form))
+    ops += cherryOps(p, s, pal, fruitFill: fruitFill)
   }
   return ops
 }

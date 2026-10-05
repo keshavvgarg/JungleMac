@@ -45,8 +45,8 @@ private let RIPE_DONE: Double = 600
 private let FIRST_TREE_GROW: Double = 15 * 60
 let FIRST_FRUIT_AT = FIRST_TREE_GROW + RIPE_DONE
 
-/// Reached after about 15 hours of focus; rendering cost grows with every plant.
-private let MAX_PLANTS = 400
+/// Reached after about 6 hours of focus, keeping a grown jungle open.
+private let MAX_PLANTS = 200
 
 struct PlantSpec {
   var id: Int
@@ -118,10 +118,45 @@ private func pickSpecies(_ roll: Double) -> Species {
   return .fern
 }
 
-func makePlant(_ seed: Int, _ i: Int) -> PlantSpec {
+/// Half-widths of each species at full scale, for spacing plants apart.
+private let FOOTPRINT: [Species: Double] = [
+  .fern: 32, .bush: 48, .banana: 50, .palm: 70, .roundTree: 85, .tallTree: 95, .cherry: 100,
+]
+
+private func isTree(_ s: Species) -> Bool { s != .fern && s != .bush }
+
+/// Picks an x for a new plant that keeps clear of its own kind at a similar
+/// depth: trees from trees, ferns and bushes from each other. Small plants
+/// still grow under trees, and plants at clearly different depths overlap,
+/// which is what gives the jungle depth. Tries a few spots and keeps the
+/// first clear one, or the most open.
+private func spacedX(_ seed: Int, _ i: Int, _ species: Species, _ depth: Double, _ first: Double, _ existing: [PlantSpec]) -> Double {
+  let r = Rng(seed, i, 61)
+  let mine = FOOTPRINT[species]! * depthToScale(depth)
+  var best = first
+  var bestScore = -1.0
+  for attempt in 0..<16 {
+    let x = attempt == 0 ? first : 30 + r() * (W - 60)
+    var score = Double.infinity
+    for p in existing where abs(p.depth - depth) < 0.22 && isTree(p.species) == isTree(species) {
+      let room = mine + FOOTPRINT[p.species]! * p.scale
+      score = min(score, abs(x - p.x) / room)
+    }
+    if score >= 1.15 { return x }
+    if score > bestScore {
+      bestScore = score
+      best = x
+    }
+  }
+  return best
+}
+
+/// The plant at index `i`. Pass the plants before it as `existing` so it can
+/// keep clear of them; callers build plants in order.
+func makePlant(_ seed: Int, _ i: Int, after existing: [PlantSpec] = []) -> PlantSpec {
   let r = Rng(seed, i)
   let species: Species
-  let x: Double
+  var x: Double
   let depth: Double
   // The first plants are placed by hand, clear of the centre panel, so every
   // jungle opens with a tree in view that fruits within 25 minutes.
@@ -133,7 +168,7 @@ func makePlant(_ seed: Int, _ i: Int) -> PlantSpec {
   default:
     species = pickSpecies(r())
     depth = r() * info(species).maxDepth
-    x = 30 + r() * (W - 60)
+    x = spacedX(seed, i, species, depth, 30 + r() * (W - 60), existing)
   }
   let size = 0.85 + r() * 0.3
   return PlantSpec(

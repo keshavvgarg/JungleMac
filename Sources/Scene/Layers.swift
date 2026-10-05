@@ -46,7 +46,13 @@ extension CALayer {
   /// Adds a looping animation whose phase is `delay` seconds into its cycle,
   /// like a negative CSS `animation-delay`.
   func loop(_ anim: CAAnimation, key: String, delay: Double = 0) {
-    anim.beginTime = localNow + delay
+    loop(anim, key: key, at: localNow + delay)
+  }
+
+  /// Adds a looping animation that began at `beginTime` in this layer's time,
+  /// to keep it in step with ones added earlier.
+  func loop(_ anim: CAAnimation, key: String, at beginTime: CFTimeInterval) {
+    anim.beginTime = beginTime
     anim.repeatCount = .infinity
     anim.isRemovedOnCompletion = false
     anim.preferredFrameRateRange = SCENE_FPS
