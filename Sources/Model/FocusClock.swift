@@ -21,11 +21,14 @@ private func load() -> Saved {
 }
 
 /// Launch arguments for previews, like the web version's URL parameters:
-/// `-speed 60` grows at 60x, `-hour 18.5` fixes the time of day.
+/// `-speed 60` grows at 60x, `-hour 18.5` fixes the time of day, and
+/// `-focus 60000` starts from that much focus without touching the save.
 enum Preview {
   static let speed: Double = max(1, UserDefaults.standard.double(forKey: "speed"))
   static let hour: Double? =
     UserDefaults.standard.object(forKey: "hour") != nil ? UserDefaults.standard.double(forKey: "hour") : nil
+  static let focus: Double? =
+    UserDefaults.standard.object(forKey: "focus") != nil ? UserDefaults.standard.double(forKey: "focus") : nil
 }
 
 /// Accumulates focused time from a monotonic clock, so a slow timer never loses
@@ -47,9 +50,11 @@ final class FocusClock: ObservableObject {
 
   init() {
     saved = load()
+    if let focus = Preview.focus { saved.focus = focus }
   }
 
   private func persist() {
+    guard Preview.focus == nil else { return }
     if let data = try? JSONEncoder().encode(saved) {
       UserDefaults.standard.set(String(decoding: data, as: UTF8.self), forKey: STORAGE_KEY)
     }

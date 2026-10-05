@@ -64,27 +64,6 @@ private func shapeFor(form: Int, variant: Int) -> CherryShape {
   return s
 }
 
-/// One soft cloud of blossom or leaves: the union of a few overlapping
-/// circles, so its edge is gently scalloped but it reads as one mass.
-private func cloud(_ c: Cluster, _ r: Rng) -> CGPath {
-  let path = CGMutablePath()
-  for _ in 0..<(7 + Int(c.radius / 6)) {
-    let a = r() * 2 * .pi
-    let d = c.radius * r().squareRoot() * 0.6
-    let rr = c.radius * (0.38 + r() * 0.2)
-    path.addEllipse(in: CGRect(x: c.center.x + cos(a) * d - rr, y: c.center.y + sin(a) * d * 0.8 - rr, width: 2 * rr, height: 2 * rr))
-  }
-  return path
-}
-
-/// A soft sheen on the sunlit top of a cloud, diffuse rather than glossy.
-private func sheen(_ c: Cluster, _ r: Rng, _ color: String, _ strength: Double) -> Op {
-  let a = -.pi / 2 + (r() - 0.5) * 1.2
-  return .fill(
-    ellipsePath(c.center.x + cos(a) * c.radius * 0.35, c.center.y + sin(a) * c.radius * 0.35, c.radius * 0.6, c.radius * 0.42),
-    .radial(cx: 0.5, cy: 0.5, r: 0.5, stops: [(0, color, strength), (1, color, 0)]))
-}
-
 /// A cherry tree with its base at (0, 0). Blossom (`s.sakura`) and leaves
 /// (`s.foliage`) fade independently, so the tree moves from bare branches to
 /// full bloom, to green leaves with cherries, to autumn colour and back.
@@ -124,7 +103,7 @@ func cherryOps(_ p: PlantSpec, _ s: PlantState, _ pal: Palette, fruitFill: Strin
   var clouds: [Op] = []
   var details: [Op] = []
   for c in shape.clusters.sorted(by: { $0.center.y < $1.center.y }) {
-    let path = cloud(c, r)
+    let path = cloudPath(c.center, c.radius, r)
     let stays = r(), blooms = r()
     // Fully bare by deep winter, when foliage bottoms out at 0.1.
     let leafy = (s.foliage - 0.1) / 0.9
@@ -132,7 +111,7 @@ func cherryOps(_ p: PlantSpec, _ s: PlantState, _ pal: Palette, fruitFill: Strin
     if blooms < s.sakura {
       shadows.append(.fill(path, .solid("#c27c98"), opacity: 0.5, translate(2, 4)))
       clouds.append(.fill(path, .vertical([(0, "#ffeef3", 1), (0.45, "#f7c3d3", 1), (1, "#e293b0", 1)])))
-      details.append(sheen(c, r, "#fff8fa", 0.5))
+      details.append(cloudSheen(c.center, c.radius, r, "#fff8fa", 0.5))
       // A scatter of petals, deeper pink and white, for texture.
       for _ in 0..<7 {
         let a = r() * 2 * .pi, d = c.radius * r() * 0.8
@@ -141,7 +120,7 @@ func cherryOps(_ p: PlantSpec, _ s: PlantState, _ pal: Palette, fruitFill: Strin
     } else {
       shadows.append(.fill(path, .solid(shade(pal.leafDark, -0.25)), opacity: 0.5, translate(2, 4)))
       clouds.append(.fill(path, .vertical([(0, shade(pal.leafLight, 0.08), 1), (0.5, pal.leafMid, 1), (1, pal.leafDark, 1)])))
-      details.append(sheen(c, r, shade(pal.leafLight, 0.35), 0.35))
+      details.append(cloudSheen(c.center, c.radius, r, shade(pal.leafLight, 0.35), 0.35))
     }
   }
   inner += shadows + clouds + details

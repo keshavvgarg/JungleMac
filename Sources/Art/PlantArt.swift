@@ -22,27 +22,11 @@ private func leaf(_ len: Double, _ w: Double) -> String {
   "M0 0 Q\(f(w)) \(f(-len * 0.45)) 0 \(f(-len)) Q\(f(-w)) \(f(-len * 0.45)) 0 0Z"
 }
 
-private func frond(_ len: Double) -> String {
-  "M0 0 Q\(f(len * 0.5)) \(f(-len * 0.32)) \(f(len)) \(f(len * 0.3)) Q\(f(len * 0.5)) \(f(-len * 0.08)) 0 6Z"
-}
-
 private let FERN_ANGLES: [Double] = [-68, -45, -22, 0, 22, 45, 68]
 private let BUSH_FLOWERS: [(Double, Double)] = [(-30, -26), (-12, -44), (8, -50), (24, -30), (-2, -22), (34, -14), (-38, -10), (14, -38)]
 private let BANANA_LEAVES: [(Double, Double)] = [(-78, 70), (-42, 80), (-8, 72), (30, 82), (70, 70)]
 private let BANANA_FRUIT: [(Double, Double, Double)] = [(0, 0, -20), (5, 2, -10), (-4, 6, -30), (2, 10, -15), (7, 11, -5)]
 private let PALM_FRONDS: [(Double, Double)] = [(-50, 1), (-20, 1), (10, 1), (35, 1), (-50, -1), (-20, -1), (10, -1), (35, -1), (-80, 1), (-80, -1)]
-private let ROUND_CANOPY: [(Double, Double, Double, Int)] = [
-  (-50, -168, 46, 0), (50, -170, 44, 0), (0, -160, 48, 0),
-  (-28, -205, 44, 1), (30, -207, 43, 1), (0, -218, 54, 1),
-  (-18, -232, 26, 2), (22, -238, 20, 2),
-]
-private let ROUND_FRUIT: [(Double, Double)] = [(-45, -160), (-20, -190), (15, -175), (45, -160), (30, -200), (-5, -150), (-38, -205), (55, -185)]
-private let TALL_CANOPY: [(Double, Double, Double, Double, Int)] = [
-  (-36, -214, 34, 15, 1), (0, -312, 92, 32, 0), (-44, -332, 60, 26, 1),
-  (46, -330, 58, 25, 1), (0, -350, 56, 26, 1), (-10, -362, 32, 14, 2),
-]
-private let TALL_FRUIT: [(Double, Double)] = [(-62, -296), (-28, -288), (18, -290), (60, -297), (0, -283), (-44, -306), (40, -306)]
-private let TALL_VINES: [(Double, Double)] = [(-70, -300), (30, -290), (75, -305)]
 /// The leaf gradient for a hue bucket and tone (0 dark, 1 mid, 2 light).
 func leafPaint(_ pal: Palette, _ bucket: Int, _ tone: Int) -> Paint {
   let base = shade([pal.leafDark, pal.leafMid, pal.leafLight][tone], LEAF_BUCKETS[bucket])
@@ -62,7 +46,7 @@ func drawnState(_ s: PlantState) -> PlantState {
 func plantImageKey(_ p: PlantSpec, _ s: PlantState, _ pal: Palette) -> String {
   let kinds = FRUIT_COLORS[p.species]?.count ?? 1
   let fk = Int((p.fruitKind * Double(kinds)).rounded(.down))
-  let variant = p.species == .cherry ? p.id % CHERRY_VARIANTS : 0
+  let variant = p.species == .cherry ? p.id % CHERRY_VARIANTS : [.roundTree, .tallTree, .palm].contains(p.species) ? p.id % TREE_VARIANTS : 0
   return "\(p.species.rawValue)|\(p.form)|\(variant)|\(leafBucket(p.hue))|\(fk)|\(s.bloom)|\(s.fruitSize)|\(s.ripeness)|\(s.vine)|\(s.sakura)|\(s.foliage)|\(pal.key)"
 }
 
@@ -142,58 +126,23 @@ func plantOps(_ p: PlantSpec, _ s: PlantState, _ pal: Palette) -> [Op] {
     let trunk = "M-3 0 Q14 -110 \(f(cx)) \(f(cy))"
     ops.append(.stroke(trunk, Stroke(color: pal.trunk, width: 9, cap: .round)))
     ops.append(.stroke(trunk, Stroke(color: shade(pal.trunk, -0.3), width: 9, dash: [1.5, 9])))
-    for (i, (r, m)) in PALM_FRONDS.enumerated() {
-      ops.append(.fill(frond(96), g[i % 3], translate(cx, cy).then(scale(m, 1)).then(rotate(r))))
-    }
+    ops += palmFronds(p, pal, center: CGPoint(x: cx, y: cy), fronds: PALM_FRONDS)
     ops += blossoms([(cx - 10, cy + 6), (cx + 2, cy + 10), (cx + 12, cy + 5)], 3)
     ops += fruits([(cx - 6, cy + 8), (cx + 5, cy + 9), (cx, cy + 14), (cx + 11, cy + 4)], 5.5)
 
   case .roundTree:
-    let trunk =
-      p.form == 1
-      ? "M-15 0 Q-9 -64 -7 -126 L7 -126 Q9 -64 15 0Z"
-      : p.form == 2
-        ? "M-5 0 Q16 -78 2 -154 L11 -150 Q26 -70 9 0Z"
-        : "M-11 0 Q-6 -80 -5 -150 L5 -150 Q6 -80 11 0Z"
-    let crown =
-      p.form == 1
-      ? translate(0, 18).then(scale(1.16, 0.86))
-      : p.form == 2 ? translate(6, -8).then(scale(0.86, 1.08)) : .identity
-    ops.append(.fill(trunk, .solid(pal.trunk)))
-    ops.append(.stroke("M-3 -120 Q-25 -140 -40 -165", Stroke(color: pal.trunk, width: 5, cap: .round)))
-    ops.append(.stroke("M3 -130 Q25 -150 42 -170", Stroke(color: pal.trunk, width: 5, cap: .round)))
-    var crownOps: [Op] = ROUND_CANOPY.map { (x, y, r, tone) in
-      .fill(circlePath(x, y, r), g[tone], opacity: tone == 2 ? 0.8 : 1)
-    }
-    crownOps += blossoms(ROUND_FRUIT, 3.6)
-    crownOps += fruits(ROUND_FRUIT, 6.5)
-    ops.append(.group(crownOps, crown))
+    let art = roundTreeArt(p, pal)
+    ops += art.back + art.crown
+    ops += blossoms(art.hang, 3.6)
+    let kind = min(2, Int((p.fruitKind * 3).rounded(.down)))
+    ops += realFruitOps(kind, art.hang, size: 6.5 * s.fruitSize, ripeness: s.ripeness, seed: p.id % TREE_VARIANTS)
 
   case .tallTree:
-    ops.append(
-      .fill(
-        p.form == 1
-          ? "M-7 0 Q-4 -170 -3 -330 L3 -330 Q4 -170 7 0Z"
-          : p.form == 2 ? "M-13 0 Q-8 -140 -6 -270 L6 -270 Q8 -140 13 0Z" : "M-10 0 Q-6 -160 -4 -305 L4 -305 Q6 -160 10 0Z",
-        .solid(pal.trunk)))
-    ops.append(.fill("M-10 0 L-26 0 L-7 -34Z M10 0 L26 0 L7 -34Z", .solid(shade(pal.trunk, -0.1))))
-    ops.append(.stroke("M-3 -190 Q-20 -200 -34 -212", Stroke(color: pal.trunk, width: 5, cap: .round)))
-    let canopy =
-      p.form == 1
-      ? translate(0, -24).then(scale(0.86, 1.12))
-      : p.form == 2 ? translate(0, 20).then(scale(1.2, 0.82)) : .identity
-    ops.append(.group(TALL_CANOPY.map { (x, y, rx, ry, tone) in .fill(ellipsePath(x, y, rx, ry), g[tone]) }, canopy))
-    if s.vine > 0 {
-      for (i, (x, y)) in TALL_VINES.enumerated() {
-        let len = 30 + s.vine * (90 + Double(i) * 20)
-        ops.append(
-          .stroke(
-            "M\(f(x)) \(f(y)) q6 \(f(len * 0.25)) 0 \(f(len * 0.5)) q-6 \(f(len * 0.25)) 0 \(f(len * 0.5))",
-            Stroke(color: mid, width: 1.6)))
-      }
-    }
-    ops += blossoms(TALL_FRUIT, 3.2)
-    ops += fruits(TALL_FRUIT, 5)
+    let art = tallTreeArt(p, pal)
+    ops += art.back + art.crown
+    ops += tallTreeVines(p, pal, s.vine)
+    ops += blossoms(art.hang, 3.2)
+    ops += fruits(art.hang, 5)
 
   case .cherry:
     ops += cherryOps(p, s, pal, fruitFill: fruitFill)

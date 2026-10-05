@@ -100,7 +100,6 @@ final class JungleScene {
   private let skyEvents = CALayer()
   private let airEvents = CALayer()
   private lazy var wildlife = Wildlife(bands: bands, sky: skyEvents, air: airEvents) { [unowned self] in self.density($0) }
-  private let canopy = CALayer()
   private let frame = CALayer()
 
   private let waterfall = CALayer()
@@ -151,7 +150,7 @@ final class JungleScene {
     sky.frame = viewport.bounds
     sky.startPoint = CGPoint(x: 0.5, y: 0)
     sky.endPoint = CGPoint(x: 0.5, y: 1)
-    for l in [sky, stars, moon, skyEvents, sun, clouds, hillFar, hillMid, mistHills, hillNear, ground, rainbow, bands[0], mistFar, bands[1], mistMid, puffs, bands[2], airEvents, rays, flyers, canopy, frame] {
+    for l in [sky, stars, moon, skyEvents, sun, clouds, hillFar, hillMid, mistHills, hillNear, ground, rainbow, bands[0], mistFar, bands[1], mistMid, puffs, bands[2], airEvents, rays, flyers, frame] {
       world.addSublayer(l)
     }
     for b in bands { b.frame = viewport.bounds }
@@ -426,8 +425,6 @@ final class JungleScene {
 
     buildRainbow()
     recolorRegions(pal)
-    canopy.sublayers?.forEach { $0.removeFromSuperlayer() }
-    _ = canopy.addSprite(render(canopyOps(pal), pixelsPerUnit: px))
     buildFrame(pal)
   }
 
@@ -450,21 +447,6 @@ final class JungleScene {
     m.lineWidth = 18
     rainbow.mask = m
     rainbow.opacity = 0
-  }
-
-  private func canopyOps(_ pal: Palette) -> [Op] {
-    let leaf = shade(pal.leafDark, -0.2)
-    var ops: [Op] = []
-    for i in 0..<14 {
-      let x = Double(i) * 130 - 40
-      let len = 150 + Double(i % 3) * 40
-      var g: [Op] = [.fill("M0 0 Q40 \(f(len * 0.45)) 10 \(f(len)) Q-30 \(f(len * 0.5)) 0 0Z", .solid(i % 2 == 1 ? leaf : shade(leaf, 0.12)))]
-      if i % 2 == 0 {
-        g.append(.stroke("M20 40 q8 \(40 + i * 4) 0 \(90 + i * 6)", Stroke(color: shade(pal.leafMid, -0.1), width: 1.4)))
-      }
-      ops.append(.group(g, translate(x, -20)))
-    }
-    return ops
   }
 
   private func buildFrame(_ pal: Palette) {
@@ -686,9 +668,9 @@ final class JungleScene {
   ///
   /// Everything is laid out in time, not along the curve, so the rhythm stays
   /// even. The bird jumps off the branch fast and settles into a cruise, then
-  /// brakes and flares nose-up to land. In between it flies the way small birds
-  /// do, in bounds: a couple of wingbeats lift it, then it folds its wings and
-  /// dips until the next burst. Height, wings and pitch share one timeline, so
+  /// brakes and flares nose-up to land. In between it flaps steadily, now and
+  /// then holding its wings out for a short glide that sinks it a little, which
+  /// the next wingbeats make up. Height, wings and pitch share one timeline, so
   /// they stay in step. Each leg's duration comes from its length, so near and
   /// far birds fly at a natural pace.
   private func addFlights(_ node: BirdNode, _ b: BirdPlacement, arriving: Bool) {
@@ -718,13 +700,15 @@ final class JungleScene {
     // World units a second. Distant birds are drawn smaller, so they also
     // cover less of the screen, as perspective would have it.
     let speed = min(120, max(30, (80 + r() * 30) * b.scale))
-    // One bound is a burst of beats then a glide with folded wings.
-    let cycle = 0.6 + r() * 0.2
-    let flapShare = 0.5 + r() * 0.1
-    let lift = (5 + r() * 3) * b.scale
     // A wingbeat while flapping steadily.
     let beat = 0.16 + r() * 0.04
-    let folded = 0.2
+    // Glides: how long, how far apart, and how much height each one loses.
+    let glide = 0.45 + r() * 0.3
+    let recover = 0.8
+    func gap() -> Double { 2.5 + r() * 3 }
+    let sink = (6 + r() * 4) * b.scale
+    // Wings held out, a little raised, while gliding.
+    let spread = 0.45
 
     let launch = SpeedProfile(boost: 1.7, boostSpan: 0.2, brakeSpan: 0)
     let landing = SpeedProfile(boost: 1, boostSpan: 0, brakeSpan: 0.3)
@@ -743,15 +727,45 @@ final class JungleScene {
     func fly(_ route: FlightRoute, _ profile: SpeedProfile, start: Double, duration: Double, lands: Bool) {
       // No glides while climbing off the branch or coming in to land: the
       // bird flaps the whole way there.
-      let calmStart = lands ? 0 : 0.8
-      let calmEnd = lands ? 1.6 : 0
-      func bounding(_ k: Int) -> Bool {
-        let c0 = Double(k) * cycle
-        return c0 >= calmStart && c0 + cycle <= duration - calmEnd
+      let calmStart: Double = lands ? 0 : 1
+      let calmEnd: Double = lands ? 1.8 : 0
+      let end = start + duration
+
+      // Wings first, as they decide where the glides fall. Keys are clipped
+      // to the leg, and each beat or glide ends with the wings up.
+      func key(_ t: Double, _ v: Double) {
+        guard t < duration else { return }
+        wing.append(v)
+        wingTimes.append((start + t) / period)
       }
+      var glides: [Double] = []
+      var t = 0.0
+      var nextGlide = calmStart + r() * 2
+      key(0, 1)
+      while t < duration {
+        if t >= nextGlide && t + glide + recover <= duration - calmEnd {
+          key(t + 0.08, spread)
+          key(t + glide - 0.06, spread)
+          key(t + glide, 1)
+          glides.append(t)
+          t += glide
+          nextGlide = t + gap()
+        } else {
+          // Quicker beats in the last moments before touchdown.
+          let stroke = lands && t > duration - 0.6 ? beat * 0.7 : beat
+          key(t + stroke / 2, -0.7)
+          key(t + stroke, 1)
+          t += stroke
+        }
+      }
+
+      // Sinks gently through each glide, then climbs back on the wingbeats.
       func height(_ t: Double) -> Double {
-        let k = Int(t / cycle)
-        return bounding(k) ? lift * bound((t - Double(k) * cycle) / cycle, flapShare) : 0
+        for g in glides where t > g && t < g + glide + recover {
+          let x = t - g
+          return -sink * (x < glide ? smoothstep(x / glide) : 1 - smoothstep((x - glide) / recover))
+        }
+        return 0
       }
 
       let n = max(8, Int(duration * 20))
@@ -762,7 +776,7 @@ final class JungleScene {
         points.append(CGPoint(x: pt.x, y: pt.y - height(t)))
         times.append((start + t) / period)
         // Nose up when climbing, down when diving, from the route alone so
-        // the bounds don't rock the body.
+        // the glides don't rock the body.
         var pitch = max(-0.4, min(0.4, atan2(tangent.y, abs(tangent.x) + 1e-6) * 0.7))
         if lands {
           let f = smoothstep((t - duration + 0.5) / 0.4)
@@ -772,37 +786,6 @@ final class JungleScene {
         faces.append(abs(tangent.x) > 1e-3 ? (tangent.x > 0 ? 1 : -1) : faces.last!)
       }
 
-      // Wings, clipped to the leg; every bound starts and ends with them up.
-      let end = start + duration
-      func key(_ t: Double, _ v: Double) {
-        guard t < end else { return }
-        wing.append(v)
-        wingTimes.append(t / period)
-      }
-      key(start, 1)
-      var k = 0
-      while Double(k) * cycle < duration {
-        let c0 = start + Double(k) * cycle
-        if bounding(k) {
-          let flapping = cycle * flapShare
-          for j in 0..<2 {
-            key(c0 + flapping * (Double(j) + 0.5) / 2, -0.7)
-            key(c0 + flapping * Double(j + 1) / 2, 1)
-          }
-          key(c0 + flapping + 0.06, folded)
-          key(c0 + cycle - 0.06, folded)
-          key(c0 + cycle, 1)
-        } else {
-          // Quicker beats in the last moments before touchdown.
-          let braking = lands && start + Double(k + 1) * cycle > end - 0.6
-          let beats = max(1, Int((cycle / (braking ? beat * 0.7 : beat)).rounded()))
-          for j in 0..<beats {
-            key(c0 + cycle * (Double(j) + 0.5) / Double(beats), -0.7)
-            key(c0 + cycle * Double(j + 1) / Double(beats), 1)
-          }
-        }
-        k += 1
-      }
       wing.append(1)
       wingTimes.append(end / period)
     }
@@ -1058,8 +1041,6 @@ extension JungleScene {
     bamboo.opacity = Float(r.bamboo)
     meadow.isHidden = r.meadow <= 0.01
     meadow.opacity = Float(r.meadow)
-    canopy.isHidden = r.canopy < 0.01
-    canopy.opacity = Float(r.canopy)
 
     let size = (r.pond * 50).rounded() / 50
     pond.isHidden = size <= 0.04
@@ -1168,24 +1149,6 @@ private struct SpeedProfile {
 
   /// Fraction of the route covered at fraction `u` of the leg's time.
   func distance(_ u: Double) -> Double { raw(u) / mean }
-}
-
-/// Height through one bound, from 0 at its start and end to about 1 where the
-/// wings fold at `flapShare` of the way through. The beats pull it out of the
-/// previous dip and up; with wings folded it coasts up a touch more and falls
-/// like a thrown stone.
-private func bound(_ phase: Double, _ flapShare: Double) -> Double {
-  let a = flapShare, glide = 1 - flapShare
-  let rising = 0.6 / a
-  let g = 2 * (1 + rising * glide) / (glide * glide)
-  if phase >= a {
-    let w = phase - a
-    return 1 + rising * w - g * w * w / 2
-  }
-  // Hermite from the fall it was in to the climb at the fold.
-  let x = phase / a
-  let falling = rising - g * glide
-  return a * falling * (x * x * x - 2 * x * x + x) + (3 * x * x - 2 * x * x * x) + a * rising * (x * x * x - x * x)
 }
 
 private func smoothstep(_ x: Double) -> Double {

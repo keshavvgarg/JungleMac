@@ -90,7 +90,7 @@ func weatherAt(_ now: Date, _ weights: [Double], _ day: DayState) -> WeatherStat
 }
 
 struct RegionState {
-  var meadow, wetlands, bamboo, waterfall, canopy: Double
+  var meadow, wetlands, bamboo, waterfall: Double
   /// Pond size, 0 until the wetlands unlock, then growing for several hours.
   var pond: Double
 }
@@ -100,7 +100,6 @@ let REGION_MILESTONES: [(at: Double, text: String)] = [
   (20 * 60, "A pond has gathered in the wetlands"),
   (45 * 60, "A bamboo grove has risen"),
   (2 * 60 * 60, "A waterfall has found the hills"),
-  (4 * 60 * 60, "The canopy has closed overhead"),
 ]
 
 func regionsAt(_ focus: Double) -> RegionState {
@@ -108,6 +107,5 @@ func regionsAt(_ focus: Double) -> RegionState {
   let wetlands = reveal(20 * 60)
   return RegionState(
     meadow: reveal(5 * 60), wetlands: wetlands, bamboo: reveal(45 * 60), waterfall: reveal(2 * 60 * 60),
-    canopy: reveal(4 * 60 * 60),
     pond: wetlands * (0.4 + 0.6 * clamp((focus - 20 * 60) / (3 * 60 * 60))))
 }

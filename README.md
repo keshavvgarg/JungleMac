@@ -18,7 +18,7 @@ Drag `build/Jungle.app` into `/Applications` to keep it. Space starts and stops,
 
 ## Wildlife and rare events
 
-Ground animals arrive with total focus, like the birds: an Indian hare (30 minutes), a peacock that fans its train (2 hours), a pair of spotted deer (4 hours), an elephant and calf walking the far hills (8 hours) and a Bengal tiger (15 hours) that only prowls through in some hours.
+Ground animals arrive with total focus, like the birds: a few Indian hares (30 minutes), a peacock that fans its train (2 hours), a pair of spotted deer (4 hours), an elephant and calf walking the far hills (8 hours) and a Bengal tiger (15 hours) that only prowls through in some hours.
 
 Rare events follow the real clock and the jungle's seed: shooting stars on clear nights, an aurora on about one winter night in three, a comet on about one clear night in twelve, migrating flocks on autumn days and butterflies in spring and summer. The field guide lists animals and first sightings.
 
@@ -51,6 +51,7 @@ Pass them after `--args`, for example `open build/Jungle.app --args -speed 60`.
 | --- | --- |
 | `-speed 60` | Grows at 60× speed. Preview time is saved like real focus time |
 | `-hour 18.5` | Fixes the time of day |
+| `-focus 60000` | Starts from that many seconds of focus, without saving anything |
 | `-autostart YES` | Starts the timer on launch |
 
 Running the binary with `-snapshot out.png -focus 72000 -seed 12345` renders the scene to a PNG without opening a window. That is handy for checking artwork; particles and animations do not appear in it.
