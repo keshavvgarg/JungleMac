@@ -93,8 +93,9 @@ func roundTreeArt(_ p: PlantSpec, _ pal: Palette) -> TreeArtResult {
   let tones = leafTones(pal, leafBucket(p.hue))
   let bark = pal.trunk
 
-  let shape = [(118.0, 72.0), (104, 80), (126, 66)][p.form]
-  let rx = shape.0 + r() * 12, ry = shape.1 + r() * 8
+  // About as wide as the old fruit trees, so a grove does not fill the scene.
+  let shape = [(88.0, 70.0), (80, 76), (94, 64)][p.form]
+  let rx = shape.0 + r() * 8, ry = shape.1 + r() * 6
   let cx = (r() - 0.5) * 16
   let cy = -232 + ry * 0.86
 
@@ -105,7 +106,7 @@ func roundTreeArt(_ p: PlantSpec, _ pal: Palette) -> TreeArtResult {
   ]
   for k in 0..<4 {
     let a = (-155 + Double(k) * 43 + (r() - 0.5) * 12) * .pi / 180
-    let len = 60 + r() * 30
+    let len = 48 + r() * 22
     back.append(
       .stroke(
         "M0 -84 Q\(f(cos(a) * len * 0.4)) \(f(-100 + sin(a) * len * 0.3)) \(f(cos(a) * len * 0.9)) \(f(-90 + sin(a) * len * 0.8))",
@@ -113,9 +114,9 @@ func roundTreeArt(_ p: PlantSpec, _ pal: Palette) -> TreeArtResult {
   }
 
   let crownOps: [Op] = [
-    .fill(scallopedPath(cx + 4, cy + 6, rx, ry, r, bumps: 16, bump: 26), .solid(tones.dark)),
-    .fill(scallopedPath(cx - 6, cy - 8, rx * 0.86, ry * 0.8, r, bumps: 14, bump: 24), .solid(tones.mid)),
-    .fill(scallopedPath(cx - 26, cy - 26, rx * 0.5, ry * 0.42, r, bumps: 9, bump: 18), .solid(tones.light)),
+    .fill(scallopedPath(cx + 4, cy + 6, rx, ry, r, bumps: 14, bump: 22), .solid(tones.dark)),
+    .fill(scallopedPath(cx - 5, cy - 8, rx * 0.86, ry * 0.8, r, bumps: 12, bump: 20), .solid(tones.mid)),
+    .fill(scallopedPath(cx - 20, cy - 24, rx * 0.5, ry * 0.42, r, bumps: 8, bump: 15), .solid(tones.light)),
   ]
 
   // Fruit hangs from the lower and outer parts of the crown.
